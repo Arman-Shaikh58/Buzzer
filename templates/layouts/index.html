@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buzzer Round</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="{{url_for('static', filename='Javascript/socket.io.min.js')}}"></script>
+</head>
+
+<body class="bg-gray-100">
+    {% block content %}
+    {% endblock %}
+
+    <script>
+        const socket = io();
+        let currentSocketId;
+        let username = "{{ username }}"; // Get username from template
+        let isMaxClicksReached = false;
+        let hasClicked = false;
+
+        // Socket event listeners
+        socket.on('connect', () => {
+            currentSocketId = socket.id;
+            console.log('Connected with ID:', currentSocketId);
+        });
+
+        const buzzButton = document.getElementById('buzzButton');
+        const buzzerHistory = document.getElementById('buzzerHistory');
+        const historyContainer = document.getElementById('historyContainer');
+        const closeHistory = document.getElementById('closeHistory');
+        const resetButton = document.getElementById('resetButton');
+
+        // Handle history container visibility
+        if (closeHistory) {
+            closeHistory.addEventListener('click', () => {
+                historyContainer.classList.add('translate-y-full');
+            });
+        }
+
+        socket.on('buzz', (buzzList) => {
+            // Clear existing history
+            if (buzzerHistory) {
+                buzzerHistory.innerHTML = '';
+            }
+            
+            // Clear admin results
+            const resultsDiv = document.getElementById('buzzerResults');
+            if (resultsDiv) {
+                resultsDiv.innerHTML = '';
+            }
+            
+            // Check if we've reached max clicks
+            isMaxClicksReached = buzzList.length >= 10;
+            
+            // Update button state
+            if (buzzButton) {
+                if (isMaxClicksReached) {
+                    buzzButton.disabled = true;
+                    buzzButton.classList.add('opacity-50');
+                    buzzButton.textContent = 'MAX CLICKS REACHED';
+                }
+            }
+
+            // Add all buzzes in order
+            buzzList.forEach(buzz => {
+                if (buzzerHistory) {
+                    addBuzzerClick(buzz.username, buzz.timestamp, buzz.position);
+                }
+                if (document.getElementById('buzzerResults')) {
+                    addBuzzerResult(buzz.username, buzz.timestamp, buzz.position);
+                }
+            });
+
+            // Show history with animation if there are buzzes
+            if (buzzList.length > 0 && historyContainer) {
+                setTimeout(() => {
+                    historyContainer.classList.remove('translate-y-full');
+                }, 100);
+            }
+        });
+
+        // Event Listeners
+        if (buzzButton) {
+            buzzButton.addEventListener('click', () => {
+                if (isMaxClicksReached || hasClicked) return; // Don't proceed if max clicks reached or already clicked
+                
+                hasClicked = true;
+                const now = new Date();
+                const timestamp = `${now.toLocaleTimeString('en-US', { hour12: false })}.${now.getMilliseconds().toString().padStart(3, '0')}`;
+                socket.emit('buzz', {
+                    username: username,
+                    timestamp: timestamp,
+                    senderId: currentSocketId
+                });
+                
+                // Hide button and show history
+                buzzButton.style.display = 'none';
+                historyContainer.classList.remove('translate-y-full');
+            });
+        }
+
+        // Admin reset functionality
+        if (resetButton) {
+            resetButton.addEventListener('click', () => {
+                if (confirm('Are you sure you want to reset all buzzes?')) {
+                    socket.emit('reset');
+                }
+            });
+        }
+
+        // Handle reset event from server
+        socket.on('reset', () => {
+            // Reset all states
+            hasClicked = false;
+            isMaxClicksReached = false;
+            
+            // Clear all history
+            if (buzzerHistory) {
+                buzzerHistory.innerHTML = '';
+            }
+            if (document.getElementById('buzzerResults')) {
+                document.getElementById('buzzerResults').innerHTML = '';
+            }
+            
+            // Reset button state
+            if (buzzButton) {
+                buzzButton.style.display = 'block';
+                buzzButton.disabled = false;
+                buzzButton.classList.remove('opacity-50');
+                buzzButton.textContent = 'BUZZ';
+            }
+            
+            // Hide history container
+            if (historyContainer) {
+                historyContainer.classList.add('translate-y-full');
+            }
+        });
+
+        function addBuzzerClick(username, timestamp, position) {
+            const buzzDiv = document.createElement('div');
+            buzzDiv.className = 'flex items-center justify-between bg-gray-50 p-2 rounded-lg transform transition-all duration-300 ease-out opacity-0 translate-y-4';
+            
+            // Get position text
+            let positionText = '';
+            switch (position) {
+                case 1:
+                    positionText = '🥇 1st';
+                    break;
+                case 2:
+                    positionText = '🥈 2nd';
+                    break;
+                case 3:
+                    positionText = '🥉 3rd';
+                    break;
+                default:
+                    positionText = `${position}th`;
+            }
+
+            // Format timestamp for display
+            const [time, milliseconds] = timestamp.split('.');
+            const formattedTime = `${time}.${milliseconds.padStart(3, '0')}`;
+
+            buzzDiv.innerHTML = `
+                <div class="flex items-center space-x-2">
+                    <span class="font-bold text-purple-600">${positionText}</span>
+                    <span class="font-semibold text-gray-700">${username}</span>
+                </div>
+                <span class="text-gray-500 text-sm">${formattedTime}</span>
+            `;
+
+            buzzerHistory.appendChild(buzzDiv);
+            // Trigger animation
+            setTimeout(() => {
+                buzzDiv.classList.remove('opacity-0', 'translate-y-4');
+            }, 50);
+            buzzerHistory.scrollTop = buzzerHistory.scrollHeight;
+        }
+
+        function addBuzzerResult(username, timestamp, position) {
+            const resultsDiv = document.getElementById('buzzerResults');
+            if (!resultsDiv) return;
+
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'flex items-center justify-between bg-gray-50 p-3 rounded-lg transform transition-all duration-300 ease-out opacity-0 translate-y-4';
+
+            // Get position text
+            let positionText = '';
+            switch (position) {
+                case 1:
+                    positionText = '🥇 1st';
+                    break;
+                case 2:
+                    positionText = '🥈 2nd';
+                    break;
+                case 3:
+                    positionText = '🥉 3rd';
+                    break;
+                default:
+                    positionText = `${position}th`;
+            }
+
+            // Format timestamp for display
+            const [time, milliseconds] = timestamp.split('.');
+            const formattedTime = `${time}.${milliseconds.padStart(3, '0')}`;
+
+            resultDiv.innerHTML = `
+                <div class="flex items-center space-x-3">
+                    <span class="font-bold text-purple-600 text-xl">${positionText}</span>
+                    <span class="font-semibold text-gray-700">${username}</span>
+                </div>
+                <span class="text-gray-500">${formattedTime}</span>
+            `;
+
+            // Add to the end of the list instead of the beginning
+            resultsDiv.appendChild(resultDiv);
+            // Trigger animation
+            setTimeout(() => {
+                resultDiv.classList.remove('opacity-0', 'translate-y-4');
+            }, 50);
+        }
+    </script>
+</body>
+
+</html>
